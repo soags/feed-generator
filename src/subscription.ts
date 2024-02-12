@@ -1,3 +1,4 @@
+import { DeleteResult } from 'kysely'
 import {
   OutputSchema as RepoEvent,
   isCommit,
@@ -9,42 +10,64 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     if (!isCommit(evt)) return
     const ops = await getOpsByType(evt)
 
-    // This logs the text of every post off the firehose.
-    // Just for fun :)
-    // Delete before actually using
-    for (const post of ops.posts.creates) {
-      console.log(post.record.text)
-    }
+    const likesToCreate = ops.likes.creates.map((create) => {
+      return {
+        uri: create.uri,
+        author: create.author,
+        createdAt: create.record.createdAt,
+      }
+    })
 
-    const postsToDelete = ops.posts.deletes.map((del) => del.uri)
-    const postsToCreate = ops.posts.creates
-      .filter((create) => {
-        // only alf-related posts
-        return create.record.text.toLowerCase().includes('alf')
-      })
-      .map((create) => {
-        // map alf-related posts to a db row
-        return {
-          uri: create.uri,
-          cid: create.cid,
-          replyParent: create.record?.reply?.parent.uri ?? null,
-          replyRoot: create.record?.reply?.root.uri ?? null,
-          indexedAt: new Date().toISOString(),
-        }
-      })
-
-    if (postsToDelete.length > 0) {
-      await this.db
-        .deleteFrom('post')
-        .where('uri', 'in', postsToDelete)
+    // Likeの削除は素直に削除
+    const likesToDelete = ops.likes.deletes.map((del) => del.uri)
+    if (likesToDelete.length > 0) {
+      const res = await this.db
+        .deleteFrom('like')
+        .where('uri', 'in', likesToDelete)
         .execute()
+      const deletedRows = this.totalDeleteRows(res)
+      if (deletedRows > 0) {
+        // console.log('Delete like:', deletedRows)
+      }
     }
-    if (postsToCreate.length > 0) {
-      await this.db
-        .insertInto('post')
-        .values(postsToCreate)
+
+    // Likeをユーザーごとに最大10件まで保存
+    for (const like of likesToCreate) {
+      const authorLikesDB = await this.db
+        .selectFrom('like')
+        .selectAll()
+        .where('author', '=', like.author)
+        .orderBy('createdAt', 'asc')
+        .execute()
+
+      const allLikesDB = await this.db
+        .selectFrom('like')
+        .selectAll()
+        .execute()
+
+      console.log('Author:', like.author,  'saved', authorLikesDB.length, 'likes', '/', 'total', allLikesDB.length)
+
+      if (authorLikesDB.length === 10) {
+        const res = await this.db
+          .deleteFrom('like')
+          .where('uri', '=', authorLikesDB[0].uri)
+          .execute()
+        const deletedRows = this.totalDeleteRows(res)
+        if (deletedRows > 0) {
+          // console.log('Delete like:', deletedRows)
+        }
+      }
+
+      const ins = await this.db
+        .insertInto('like')
+        .values(like)
         .onConflict((oc) => oc.doNothing())
         .execute()
+      // console.log('Insert post:', ins.length)
     }
+  }
+
+  totalDeleteRows(result: DeleteResult[]) {
+    return result.reduce((prev, curr) => prev + curr.numDeletedRows, BigInt(0))
   }
 }

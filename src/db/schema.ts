@@ -1,14 +1,19 @@
 export type DatabaseSchema = {
   post: Post
+  like: Like
   sub_state: SubState
 }
 
 export type Post = {
   uri: string
-  cid: string
-  replyParent: string | null
-  replyRoot: string | null
+  author: string  
   indexedAt: string
+}
+
+export type Like = {
+  uri: string
+  author: string
+  createdAt: string
 }
 
 export type SubState = {

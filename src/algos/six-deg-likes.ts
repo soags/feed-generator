@@ -3,14 +3,14 @@ import { QueryParams } from '../lexicon/types/app/bsky/feed/getFeedSkeleton'
 import { AppContext } from '../config'
 
 // max 15 chars
-export const shortname = 'whats-alf'
+export const shortname = 'six-deg-likes'
 
-export const handler = async (ctx: AppContext, params: QueryParams) => {
+export const handler = async (ctx: AppContext, params: QueryParams, requester: string) => {
+
   let builder = ctx.db
     .selectFrom('post')
     .selectAll()
     .orderBy('indexedAt', 'desc')
-    .orderBy('cid', 'desc')
     .limit(params.limit)
 
   if (params.cursor) {
@@ -22,7 +22,7 @@ export const handler = async (ctx: AppContext, params: QueryParams) => {
     builder = builder
       .where('post.indexedAt', '<', timeStr)
       .orWhere((qb) => qb.where('post.indexedAt', '=', timeStr))
-      .where('post.cid', '<', cid)
+      // .where('post.cid', '<', cid)
   }
   const res = await builder.execute()
 
@@ -33,7 +33,7 @@ export const handler = async (ctx: AppContext, params: QueryParams) => {
   let cursor: string | undefined
   const last = res.at(-1)
   if (last) {
-    cursor = `${new Date(last.indexedAt).getTime()}::${last.cid}`
+    // cursor = `${new Date(last.indexedAt).getTime()}::${last.cid}`
   }
 
   return {
